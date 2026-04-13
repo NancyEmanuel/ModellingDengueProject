@@ -383,74 +383,7 @@ def run_monte_carlo(df, n_simulations, temp_delta, rain_delta_pct,
         "predicted_inc_per_100k": pred_inc,
     })
     return sim_df, {"temp_fits": temp_fits, "rain_fits": rain_fits,
-                    "humid_fits": humid_fits, "case_fits": case_fits,
-                    "raw_tempMed":    df["tempMed"].dropna().values,
-                    "raw_chuva":      df["chuva"].dropna().values,
-                    "raw_umidadeMed": df["umidadeMed"].dropna().values}
-
-
-def plot_distribution_fits(fit_results_dict):
-    """
-    For each climate variable, plot a histogram of the real data
-    with all four fitted PDF curves overlaid.
-    Best-fit curve (lowest AIC) is highlighted with a star.
-    Corresponds to Step 1 of the Monte Carlo process (Week 5).
-    """
-    var_labels = {
-        "temp_fits":  ("Temperature (°C)",  "tempMed",    "#d62728"),
-        "rain_fits":  ("Rainfall (mm/week)", "chuva",      "#1f77b4"),
-        "humid_fits": ("Humidity (%)",       "umidadeMed", "#2ca02c"),
-    }
-    curve_colors = {
-        "Normal":      "#333333",
-        "Gamma":       "#9467bd",
-        "Log-Normal":  "#e377c2",
-        "Exponential": "#ff7f0e",
-    }
-    plots = {}
-    for key, (title, col, color) in var_labels.items():
-        fits = fit_results_dict.get(key, {})
-        if not fits:
-            continue
-        best_name, _, _ = best_fit(fits)
-        raw = fit_results_dict.get("raw_" + col)
-        if raw is None or len(raw) < 4:
-            continue
-
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(
-            x=raw, histnorm="probability density",
-            marker_color=color, opacity=0.45,
-            name="Real data", nbinsx=20,
-            hovertemplate="Value: %{x:.1f}<br>Density: %{y:.4f}<extra></extra>",
-        ))
-        x_range = np.linspace(np.percentile(raw, 1), np.percentile(raw, 99), 200)
-        for name, result in fits.items():
-            try:
-                y_pdf = result["dist"].pdf(x_range, *result["params"])
-                is_best = (name == best_name)
-                fig.add_trace(go.Scatter(
-                    x=x_range, y=y_pdf, mode="lines",
-                    name=f"{name} (★ best fit)" if is_best else name,
-                    line=dict(
-                        color=curve_colors.get(name, "#888"),
-                        width=3 if is_best else 1.5,
-                        dash="solid" if is_best else "dash",
-                    ),
-                    hovertemplate=f"{name}<br>PDF: %{{y:.4f}}<extra></extra>",
-                ))
-            except Exception:
-                pass
-        fig.update_layout(
-            title=f"{title} — Best fit: {best_name} (lowest AIC)",
-            xaxis_title=title, yaxis_title="Probability density",
-            height=300, margin=dict(t=50, b=10, l=60, r=10),
-            plot_bgcolor="white", paper_bgcolor="white",
-            legend=dict(orientation="h", y=-0.35, font=dict(size=11)),
-        )
-        plots[key] = (fig, best_name, fits[best_name]["aic"])
-    return plots
-
+                    "humid_fits": humid_fits, "case_fits": case_fits}
 
 
 def compute_convergence(sim_df):
@@ -540,8 +473,6 @@ def main():
         c1.info("**Tab 1 — Climate & Cases**\nReal weekly InfoDengue data: cases, temperature, rainfall, humidity trends.")
         c2.info("**Tab 2 — Climate Relationships**\nHow temperature and rainfall variations drive dengue case counts.")
         c3.info("**Tab 3 — Outbreak Scenarios**\nMonte Carlo simulation results across multiple climate futures.")
-        c4, _, _ = st.columns(3)
-        c4.info("**Tab 4 — Distribution Fitting**\nProbability distributions fitted to real climate data — Step 1 of the Monte Carlo process.")
         return
 
     # ── Load data ─────────────────────────────────────────────────────────────
@@ -558,7 +489,7 @@ def main():
             data_source = "Synthetic (InfoDengue schema)"
 
     with st.spinner(f"Running {n_sims:,} Monte Carlo trials..."):
-        sim_df, fit_results = run_monte_carlo(
+        sim_df, _ = run_monte_carlo(
             df, n_sims, temp_delta, rain_delta_pct,
             humidity_delta, beta, gamma, rng_seed=int(rng_seed)
         )
@@ -601,11 +532,10 @@ def main():
     st.markdown("---")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "🌍  Climate & Cases",
         "📐  Climate Relationships",
         "🔮  Outbreak Scenarios",
-        "📊  Distribution Fitting",
     ])
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1280,48 +1210,7 @@ def main():
 
         st.markdown("---")
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # TAB 4 — DISTRIBUTION FITTING
-    # ═══════════════════════════════════════════════════════════════════════════
-    with tab4:
-        st.subheader("Step 1 of Monte Carlo: Fitting Probability Distributions")
-        st.markdown(
-            "Before the simulation runs, we fit four theoretical distributions to each "
-            "climate variable from the real InfoDengue data. The **best fit** (marked ★) "
-            "is selected by the lowest AIC score and is the distribution the simulation "
-            "samples from. This directly corresponds to **Step 1 of the five-step "
-            "Monte Carlo process** covered in Week 5 of the lectures."
-        )
-
-        dist_plots = plot_distribution_fits(fit_results)
-
-        if dist_plots:
-            var_names = {
-                "temp_fits":  "Temperature",
-                "rain_fits":  "Rainfall",
-                "humid_fits": "Humidity",
-            }
-            for key, (fig, best_name, aic_val) in dist_plots.items():
-                st.plotly_chart(fig, use_container_width=True)
-                st.markdown(
-                    f'<div class="block-box">'
-                    f'The <b>{var_names.get(key, key)}</b> data is best described by a '
-                    f'<b>{best_name}</b> distribution (AIC = {aic_val:.1f}). '
-                    f'The solid curve is the best-fit PDF overlaid on the real data histogram. '
-                    f'Dashed curves show the other three candidates. '
-                    f'The simulation samples climate values from this fitted distribution '
-                    f'when generating each Monte Carlo trial.'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.warning("Not enough data to fit distributions.")
-
-
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # TAB 4 — DISTRIBUTION FITTING
-    # ═══════════════════════════════════════════════════════════════════════════
+       
 
 if __name__ == "__main__":
     main()
